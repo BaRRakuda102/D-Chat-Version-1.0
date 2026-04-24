@@ -13,3 +13,6 @@ frontend/preview-web/
 frontend/*.log
 .env
 .env.*
+**/__pycache__/
+**/*.pyc
+**/*.pyo
