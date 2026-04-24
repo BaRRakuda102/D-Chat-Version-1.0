@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+backend/__pycache__
+backend/.pytest_cache
+backend/.mypy_cache
+backend/dchat.db
+backend/uploads
+frontend/node_modules
+frontend/dist
+nginx/*.log
