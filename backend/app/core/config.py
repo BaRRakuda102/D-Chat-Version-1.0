@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from pydantic import Field, field_validator
@@ -13,6 +14,14 @@ from pydantic_settings import (
 
 
 _CSV_ENV_FIELDS = {"ALLOWED_ORIGINS", "ALLOWED_HOSTS"}
+
+
+def _env_or_default(name: str, default: str) -> str:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    stripped = value.strip()
+    return stripped or default
 
 
 class _CsvListSettingsMixin:
@@ -53,8 +62,13 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
 
-    DATABASE_URL: str = "postgresql+asyncpg://dchat:dchat@localhost:5432/dchat"
-    REDIS_URL: str = "redis://localhost:6379/0"
+    DATABASE_URL: str = Field(
+        default_factory=lambda: _env_or_default(
+            "DATABASE_URL",
+            "postgresql+asyncpg://dchat:dchat@localhost:5432/dchat",
+        )
+    )
+    REDIS_URL: str = Field(default_factory=lambda: _env_or_default("REDIS_URL", "redis://localhost:6379/0"))
 
     SECRET_KEY: str = "change-me-before-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
@@ -119,6 +133,20 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if normalized.startswith("postgresql+asyncpg://"):
+            return normalized
+        if normalized.startswith("postgresql://"):
+            return normalized.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if normalized.startswith("postgres://"):
+            return normalized.replace("postgres://", "postgresql+asyncpg://", 1)
+        return normalized
 
     @field_validator("COOKIE_SAMESITE")
     @classmethod
