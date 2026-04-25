@@ -142,6 +142,8 @@ async def serialize_room(
     )
     last_message = last_message_result.scalar_one_or_none()
     unread_count = 0
+    room_name = room.name
+    room_avatar_url = room.avatar_url
 
     if user_id is not None:
         membership_result = await session.execute(
@@ -161,12 +163,24 @@ async def serialize_room(
             unread_result = await session.execute(unread_query)
             unread_count = unread_result.scalar_one()
 
+        if room.type == RoomType.PRIVATE:
+            counterpart_result = await session.execute(
+                select(User)
+                .join(ChatMember, ChatMember.user_id == User.id)
+                .where(and_(ChatMember.room_id == room.id, ChatMember.user_id != user_id))
+                .limit(1)
+            )
+            counterpart = counterpart_result.scalar_one_or_none()
+            if counterpart:
+                room_name = counterpart.display_name or counterpart.username
+                room_avatar_url = counterpart.avatar_url
+
     return RoomResponse(
         id=room.id,
-        name=room.name,
+        name=room_name,
         type=room.type.value,
         description=room.description,
-        avatar_url=room.avatar_url,
+        avatar_url=room_avatar_url,
         owner_id=room.owner_id,
         member_count=member_count_result.scalar_one(),
         unread=unread_count,
