@@ -812,6 +812,9 @@
     margin: 14px 0 8px;
     letter-spacing: 0.8px;
   }
+  .friend-toolbar {
+    margin: 0 12px 12px;
+  }
   .friend-item {
     display: flex;
     align-items: center;
@@ -900,6 +903,25 @@
     position: relative;
     flex-shrink: 0;
   }
+  .chat-header-summary {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+  }
+  .chat-header-summary.clickable {
+    cursor: pointer;
+  }
+  .chat-header-summary.clickable:hover .chat-header-name {
+    color: var(--accent);
+  }
   .chat-header-avatar {
     width: 40px;
     height: 40px;
@@ -920,7 +942,6 @@
     object-fit: cover;
   }
   .chat-header-info {
-    flex: 1;
     min-width: 0;
   }
   .chat-header-name {
@@ -1018,7 +1039,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-width: min(100%, 560px);
+    max-width: min(100%, 500px);
     align-items: flex-start;
   }
   .message-card.continued {
@@ -1053,7 +1074,7 @@
     flex-direction: column;
     width: fit-content;
     max-width: 100%;
-    padding: 11px 14px;
+    padding: 9px 12px;
     border-radius: 18px;
     position: relative;
     line-height: 1.5;
@@ -1087,8 +1108,37 @@
     color: var(--text-primary);
     word-break: break-word;
   }
+  .message-inline-footer {
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .message-inline-footer.mine {
+    justify-content: flex-end;
+  }
+  .message-reactions-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .message-reactions-inline.mine {
+    justify-content: flex-end;
+  }
+  .message-time-inline {
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+  }
   .message-bubble.mine .message-content {
     color: white;
+  }
+  .message-bubble.mine .message-time-inline,
+  .message-media-stack.mine .message-time-inline {
+    color: rgba(255, 255, 255, 0.78);
   }
   .message-reply {
     width: 100%;
@@ -1165,6 +1215,11 @@
     background: var(--bg-glass-hover);
     border-color: rgba(128, 128, 128, 0.15);
   }
+  .reaction-chip.active {
+    background: rgba(0, 136, 255, 0.14);
+    border-color: rgba(0, 136, 255, 0.35);
+    color: var(--accent);
+  }
   .message-attachment {
     margin-top: 8px;
     width: fit-content;
@@ -1175,7 +1230,7 @@
     align-items: flex-start;
     gap: 8px;
     width: fit-content;
-    max-width: min(100%, 320px);
+    max-width: min(100%, 300px);
   }
   .message-media-stack.mine {
     align-items: flex-end;
@@ -1195,15 +1250,19 @@
   }
   .message-image {
     width: auto;
-    max-width: min(100%, 320px);
-    max-height: 320px;
+    max-width: min(100%, 300px);
+    max-height: 300px;
     border-radius: 14px;
     display: block;
   }
   .message-video {
-    max-width: min(100%, 280px);
+    max-width: min(100%, 260px);
     border-radius: 14px;
     display: block;
+  }
+  .message-foot,
+  .message-reactions-row {
+    display: none;
   }
   .message-attachment a {
     color: var(--accent);
@@ -1746,6 +1805,11 @@
     line-height: 1.45;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
+  }
+  .toast-card.invite {
+    background: #d7f4bf;
+    border-color: #97cc6d;
+    color: #111111;
   }
 
   /* Room Composer */

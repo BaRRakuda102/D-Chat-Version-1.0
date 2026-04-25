@@ -156,6 +156,7 @@ class MessageResponse(BaseModel):
     reply_to: ReplyPreview | None = None
     sender: UserResponse | None = None
     reactions: list[MessageReactionSummary] = Field(default_factory=list)
+    current_user_reaction: str | None = None
     attachments: list[MessageAttachmentResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

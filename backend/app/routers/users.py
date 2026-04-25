@@ -9,6 +9,7 @@ from app.dependencies import get_current_user
 from app.models import ChatMember
 from app.schemas import SimpleMessageResponse, UserResponse, UserUpdate
 from app.services import audit as audit_service
+from app.services import realtime as realtime_service
 from app.services import user as user_service
 from app.websocket_manager import manager
 
@@ -65,6 +66,7 @@ async def update_my_profile(
                 "user": public_profile.model_dump(mode="json", exclude_none=True),
             },
         )
+        await realtime_service.broadcast_room_snapshot(session, room_id=room_id)
     return user_service.serialize_user(updated_user, include_email=True)
 
 

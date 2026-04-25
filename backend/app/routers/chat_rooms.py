@@ -366,7 +366,10 @@ async def list_messages(
         room_id=room_id,
         user_id=current_user.id,
     )
-    return [chat_service.serialize_message(message) for message in messages]
+    return [
+        chat_service.serialize_message(message, current_user_id=current_user.id)
+        for message in messages
+    ]
 
 
 @router.post("/{room_id}/messages", response_model=MessageResponse)
@@ -403,7 +406,7 @@ async def create_message(
         ip_address=resolve_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    return chat_service.serialize_message(message)
+    return chat_service.serialize_message(message, current_user_id=current_user.id)
 
 
 @router.post("/{room_id}/read", response_model=SimpleMessageResponse)

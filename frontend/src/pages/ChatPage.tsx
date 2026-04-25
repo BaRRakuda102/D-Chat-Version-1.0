@@ -83,6 +83,7 @@ interface Message {
   created_at: string
   sender?: { id: number; username: string; avatar_url?: string }
   reactions?: MessageReaction[]
+  current_user_reaction?: string | null
   reply_to?: Message | null
   attachments?: MessageAttachment[]
   is_deleted?: boolean
@@ -151,6 +152,7 @@ interface MessageMenuState {
 interface ToastNotice {
   id: number
   message: string
+  variant: "default" | "invite"
 }
 
 function safeMap<T, R>(
@@ -280,6 +282,7 @@ export default function ChatPage() {
   const fileInput = useRef<HTMLInputElement>(null)
   const activeRoomRef = useRef(activeRoom)
   const addMemberMenuRef = useRef<HTMLDivElement>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   const currentRoom = rooms.find((r) => r.id === activeRoom)
   const isOwnProfile = !!profileUser && profileUser.id === user?.id
@@ -388,6 +391,7 @@ export default function ChatPage() {
           )
         )
         if (data.message?.sender_id !== user?.id) {
+          playNotificationSound("default")
           markRoomRead(activeRoom)
         }
       } else if (data.type === "typing") {
@@ -497,9 +501,50 @@ export default function ChatPage() {
     }
   }
 
-  function pushToast(message: string) {
+  function playNotificationSound(kind: "default" | "invite" = "default") {
+    if (typeof window === "undefined") return
+
+    try {
+      const AudioContextCtor = window.AudioContext
+      if (!AudioContextCtor) return
+
+      const context = audioContextRef.current ?? new AudioContextCtor()
+      audioContextRef.current = context
+      if (context.state === "suspended") {
+        void context.resume()
+      }
+
+      const now = context.currentTime
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+
+      oscillator.type = "sine"
+      oscillator.frequency.setValueAtTime(kind === "invite" ? 880 : 720, now)
+      oscillator.frequency.exponentialRampToValueAtTime(
+        kind === "invite" ? 660 : 540,
+        now + 0.18
+      )
+
+      gain.gain.setValueAtTime(0.0001, now)
+      gain.gain.exponentialRampToValueAtTime(
+        kind === "invite" ? 0.05 : 0.035,
+        now + 0.01
+      )
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
+
+      oscillator.connect(gain)
+      gain.connect(context.destination)
+      oscillator.start(now)
+      oscillator.stop(now + 0.24)
+    } catch (error) {
+      console.debug("Notification sound unavailable", error)
+    }
+  }
+
+  function pushToast(message: string, variant: "default" | "invite" = "default") {
     const id = Date.now() + Math.floor(Math.random() * 1000)
-    setToasts((prev) => [...prev, { id, message }])
+    setToasts((prev) => [...prev, { id, message, variant }])
+    playNotificationSound(variant)
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((toast) => toast.id !== id))
     }, 4500)
@@ -546,17 +591,17 @@ export default function ChatPage() {
       if (data.type === "room_snapshot" && data.room?.id) {
         upsertRoom(data.room)
         if (data.message && activeRoomRef.current !== data.room.id) {
-          pushToast(data.message)
+          pushToast(data.message, "default")
         }
       } else if (data.type === "room_membership_added" && data.room?.id) {
         upsertRoom(data.room)
         if (data.room?.type === "channel" && data.message) {
-          pushToast(data.message)
+          pushToast(data.message, "invite")
         }
       } else if (data.type === "room_membership_removed") {
         removeRoom(data.room_id)
         if (data.message) {
-          pushToast(data.message)
+          pushToast(data.message, "default")
         }
         if (activeRoomRef.current === data.room_id) {
           setMessages([])
@@ -936,11 +981,11 @@ export default function ChatPage() {
 
   const doReaction = async (mid: number, emoji: string) => {
     try {
-      await apiVoid(`/api/v1/chat/messages/${mid}/reactions`, {
+      const updated = await apiJson<Message>(`/api/v1/chat/messages/${mid}/reactions`, {
         method: "POST",
         body: JSON.stringify({ emoji }),
       })
-      loadMessages(activeRoom)
+      upsertMessage(updated)
     } catch (e) {
       console.error(e)
     }
@@ -1209,7 +1254,7 @@ export default function ChatPage() {
     setRoomEditFeedback(null)
 
     try {
-      await apiVoid(`/api/v1/chat/rooms/${currentRoom.id}`, {
+      const updatedRoom = await apiJson<Room>(`/api/v1/chat/rooms/${currentRoom.id}`, {
         method: "PUT",
         body: JSON.stringify({
           name: roomEditDraft.name.trim(),
@@ -1217,7 +1262,7 @@ export default function ChatPage() {
           avatar_url: roomEditDraft.avatar_url || null,
         }),
       })
-      await loadRooms()
+      upsertRoom(updatedRoom)
       setRoomEditFeedback({ type: "success", message: t("roomSaved") })
       setShowRoomEditor(false)
     } catch (e) {
@@ -1274,6 +1319,14 @@ export default function ChatPage() {
   const canManageRoom = currentRoom?.type === "channel" ? !!isOwner : canAdmin
   const canManageMembers = currentRoom?.type === "channel" ? !!isOwner : canAdmin
   const canAssignAdmins = currentRoom?.type === "group" && !!isOwner
+  const canOpenRoomInfo =
+    currentRoom?.type === "group" || currentRoom?.type === "channel"
+  const hasRoomMenuActions = !!currentRoom && (
+    currentRoom.type === "private" ||
+    canManageRoom ||
+    canManageMembers ||
+    !!isOwner
+  )
   const canSendInCurrentRoom =
     currentRoom?.type === "channel"
       ? !!isOwner
@@ -1371,14 +1424,6 @@ export default function ChatPage() {
                 <div className="new-chat-menu">
                   <button
                     onClick={() => {
-                      setShowAddFriend(true)
-                      setShowNewChat(false)
-                    }}
-                  >
-                    <UserPlus size={16} /> {t("addFriend")}
-                  </button>
-                  <button
-                    onClick={() => {
                       setShowCreateGroup(true)
                       setShowNewChat(false)
                     }}
@@ -1427,6 +1472,22 @@ export default function ChatPage() {
 
         {sidebarTab === "friends" && (
           <div className="sidebar-content">
+            <div className="friend-toolbar">
+              <button
+                className="new-chat-trigger"
+                onClick={() => setShowAddFriend(true)}
+              >
+                <span
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <UserPlus size={16} /> {t("addFriend")}
+                </span>
+              </button>
+            </div>
             {requests.length > 0 && (
               <div className="friend-section">
                 <div className="friend-section-title">
@@ -1564,23 +1625,51 @@ export default function ChatPage() {
               >
                 <ArrowLeft size={18} />
               </button>
-              <div className="chat-header-avatar">
-                {currentRoom.avatar_url ? (
-                  <img src={currentRoom.avatar_url} alt="" />
-                ) : (
-                  currentRoom.name?.[0]?.toUpperCase() || "?"
-                )}
-              </div>
-              <div className="chat-header-info">
-                <div className="chat-header-name">
-                  {currentRoom.name}
+              {canOpenRoomInfo ? (
+                <button
+                  type="button"
+                  className="chat-header-summary clickable"
+                  onClick={() => setShowMembers(true)}
+                >
+                  <div className="chat-header-avatar">
+                    {currentRoom.avatar_url ? (
+                      <img src={currentRoom.avatar_url} alt="" />
+                    ) : (
+                      currentRoom.name?.[0]?.toUpperCase() || "?"
+                    )}
+                  </div>
+                  <div className="chat-header-info">
+                    <div className="chat-header-name">
+                      {currentRoom.name}
+                    </div>
+                    <div className="chat-header-meta">
+                      <span>{t("members")}</span>
+                      <span className="count-pill">{roomMemberCount}</span>
+                      {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
+                    </div>
+                  </div>
+                </button>
+              ) : (
+                <div className="chat-header-summary">
+                  <div className="chat-header-avatar">
+                    {currentRoom.avatar_url ? (
+                      <img src={currentRoom.avatar_url} alt="" />
+                    ) : (
+                      currentRoom.name?.[0]?.toUpperCase() || "?"
+                    )}
+                  </div>
+                  <div className="chat-header-info">
+                    <div className="chat-header-name">
+                      {currentRoom.name}
+                    </div>
+                    <div className="chat-header-meta">
+                      <span>{t("members")}</span>
+                      <span className="count-pill">{roomMemberCount}</span>
+                      {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
+                    </div>
+                  </div>
                 </div>
-                <div className="chat-header-meta">
-                  <span>{t("members")}</span>
-                  <span className="count-pill">{roomMemberCount}</span>
-                  {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
-                </div>
-              </div>
+              )}
               <div className="chat-header-actions">
                 <button
                   className="icon-btn"
@@ -1588,18 +1677,20 @@ export default function ChatPage() {
                 >
                   <Users size={18} />
                 </button>
-                <button
-                  className="icon-btn"
-                  onClick={() =>
-                    setShowRoomMenu(
-                      showRoomMenu === currentRoom.id
-                        ? null
-                        : currentRoom.id
-                    )
-                  }
-                >
-                  <ChevronDown size={18} />
-                </button>
+                {hasRoomMenuActions && (
+                  <button
+                    className="icon-btn"
+                    onClick={() =>
+                      setShowRoomMenu(
+                        showRoomMenu === currentRoom.id
+                          ? null
+                          : currentRoom.id
+                      )
+                    }
+                  >
+                    <ChevronDown size={18} />
+                  </button>
+                )}
               </div>
               {showRoomMenu === currentRoom.id && (
                 <div className="dropdown-menu">
@@ -1673,6 +1764,13 @@ export default function ChatPage() {
                   const senderAvatar = senderProfile?.avatar_url || msg.sender?.avatar_url
                   const senderId = senderProfile?.id ?? msg.sender?.id ?? msg.sender_id
                   const isStandaloneMedia = hasOnlyImageAttachment
+                  const formattedTime = new Date(msg.created_at).toLocaleTimeString(
+                    [],
+                    {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }
+                  )
                   const attachmentElements = safeMap(
                     attachments,
                     (attachment, attachmentIndex) => (
@@ -1765,6 +1863,25 @@ export default function ChatPage() {
                               </button>
                             ) : null}
                             {attachmentElements}
+                            <div className={`message-inline-footer ${mine ? "mine" : ""}`}>
+                              {msg.reactions?.length ? (
+                                <div className={`message-reactions-inline ${mine ? "mine" : ""}`}>
+                                  {safeMap(msg.reactions, (re, idx) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      className={`reaction-chip ${
+                                        msg.current_user_reaction === re.emoji ? "active" : ""
+                                      }`}
+                                      onClick={() => doReaction(msg.id, re.emoji)}
+                                    >
+                                      {re.emoji} {re.count}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
+                              <span className="message-time-inline">{formattedTime}</span>
+                            </div>
                           </div>
                         ) : (
                           <div
@@ -1791,6 +1908,25 @@ export default function ChatPage() {
                               </div>
                             ) : null}
                             {attachmentElements}
+                            <div className={`message-inline-footer ${mine ? "mine" : ""}`}>
+                              {msg.reactions?.length ? (
+                                <div className={`message-reactions-inline ${mine ? "mine" : ""}`}>
+                                  {safeMap(msg.reactions, (re, idx) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      className={`reaction-chip ${
+                                        msg.current_user_reaction === re.emoji ? "active" : ""
+                                      }`}
+                                      onClick={() => doReaction(msg.id, re.emoji)}
+                                    >
+                                      {re.emoji} {re.count}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
+                              <span className="message-time-inline">{formattedTime}</span>
+                            </div>
                           </div>
                         )}
                         <div className={`message-foot ${mine ? "mine" : ""}`}>
@@ -2392,7 +2528,10 @@ export default function ChatPage() {
       {toasts.length > 0 && (
         <div className="toast-stack">
           {toasts.map((toast) => (
-            <div key={toast.id} className="toast-card">
+            <div
+              key={toast.id}
+              className={`toast-card ${toast.variant === "invite" ? "invite" : ""}`}
+            >
               {toast.message}
             </div>
           ))}

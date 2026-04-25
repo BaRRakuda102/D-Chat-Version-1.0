@@ -99,13 +99,20 @@ def serialize_reactions(reactions: list[MessageReaction]) -> list[MessageReactio
     ]
 
 
-def serialize_message(message: ChatMessage) -> MessageResponse:
+def serialize_message(message: ChatMessage, *, current_user_id: int | None = None) -> MessageResponse:
     reply_preview = None
     if message.reply_to:
         reply_preview = ReplyPreview(
             id=message.reply_to.id,
             content=message.reply_to.content,
             sender=serialize_user(message.reply_to.sender) if message.reply_to.sender else None,
+        )
+
+    current_user_reaction = None
+    if current_user_id is not None:
+        current_user_reaction = next(
+            (reaction.emoji for reaction in message.reactions if reaction.user_id == current_user_id),
+            None,
         )
 
     return MessageResponse(
@@ -117,6 +124,7 @@ def serialize_message(message: ChatMessage) -> MessageResponse:
         reply_to=reply_preview,
         sender=serialize_user(message.sender) if message.sender else None,
         reactions=serialize_reactions(list(message.reactions)),
+        current_user_reaction=current_user_reaction,
         attachments=[
             MessageAttachmentResponse.model_validate(attachment)
             for attachment in message.attachments
@@ -559,13 +567,22 @@ async def add_reaction(
             and_(
                 MessageReaction.message_id == message_id,
                 MessageReaction.user_id == user_id,
-                MessageReaction.emoji == emoji,
             )
         )
     )
-    if not existing_result.scalar_one_or_none():
+    existing_reactions = list(existing_result.scalars().all())
+    existing_same_reaction = next(
+        (reaction for reaction in existing_reactions if reaction.emoji == emoji),
+        None,
+    )
+
+    for reaction in existing_reactions:
+        await session.delete(reaction)
+
+    if existing_same_reaction is None:
         session.add(MessageReaction(message_id=message_id, user_id=user_id, emoji=emoji))
-        await session.commit()
+
+    await session.commit()
     return await get_message_for_user(session, message_id=message_id, user_id=user_id)
 
 

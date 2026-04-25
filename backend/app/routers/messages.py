@@ -19,7 +19,7 @@ async def get_message(
     session: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     message = await chat_service.get_message_for_user(session, message_id=message_id, user_id=current_user.id)
-    return chat_service.serialize_message(message)
+    return chat_service.serialize_message(message, current_user_id=current_user.id)
 
 
 @router.delete("/{message_id}", response_model=SimpleMessageResponse)
@@ -70,4 +70,4 @@ async def add_reaction(
         ip_address=resolve_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    return chat_service.serialize_message(message)
+    return chat_service.serialize_message(message, current_user_id=current_user.id)
