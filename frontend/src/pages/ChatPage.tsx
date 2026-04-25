@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type MouseEvent } from "react"
+import { useState, useEffect, useRef, type ClipboardEvent, type MouseEvent } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import {
   Send,
@@ -740,6 +740,33 @@ export default function ChatPage() {
     setDraft("")
     setReplyTo(null)
     setAttachFile(null)
+  }
+
+  const handleDraftPaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const clipboardFiles = Array.from(event.clipboardData?.files || [])
+    let imageFile = clipboardFiles.find((file) => file.type.startsWith("image/")) || null
+
+    if (!imageFile) {
+      const clipboardItems = Array.from(event.clipboardData?.items || [])
+      const imageItem = clipboardItems.find((item) => item.type.startsWith("image/"))
+      imageFile = imageItem?.getAsFile() || null
+    }
+
+    if (!imageFile) return
+
+    event.preventDefault()
+
+    const extension = imageFile.type.split("/")[1] || "png"
+    const normalizedFile = new File(
+      [imageFile],
+      `clipboard-image-${Date.now()}.${extension}`,
+      {
+        type: imageFile.type,
+        lastModified: Date.now(),
+      }
+    )
+
+    setAttachFile(normalizedFile)
   }
 
   const handleTyping = () => {
@@ -1823,6 +1850,7 @@ export default function ChatPage() {
                       setDraft(e.target.value)
                       handleTyping()
                     }}
+                    onPaste={handleDraftPaste}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault()
