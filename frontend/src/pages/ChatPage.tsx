@@ -11,7 +11,6 @@ import {
   Lock,
   Hash,
   ChevronDown,
-  Smile,
   Reply,
   Trash2,
   Edit3,
@@ -288,6 +287,7 @@ export default function ChatPage() {
   const isOwnProfile = !!profileUser && profileUser.id === user?.id
   const currentMembership = members.find((member) => member.user_id === user?.id)
   const roomMemberCount = currentRoom?.member_count ?? members.length
+  const showRoomMemberMeta = !!currentRoom && currentRoom.type !== "private"
 
   useEffect(() => {
     if (roomId) {
@@ -1642,11 +1642,17 @@ export default function ChatPage() {
                     <div className="chat-header-name">
                       {currentRoom.name}
                     </div>
-                    <div className="chat-header-meta">
-                      <span>{t("members")}</span>
-                      <span className="count-pill">{roomMemberCount}</span>
-                      {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
-                    </div>
+                    {showRoomMemberMeta || typing ? (
+                      <div className="chat-header-meta">
+                        {showRoomMemberMeta ? (
+                          <>
+                            <span>{t("members")}</span>
+                            <span className="count-pill">{roomMemberCount}</span>
+                          </>
+                        ) : null}
+                        {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </button>
               ) : (
@@ -1662,11 +1668,17 @@ export default function ChatPage() {
                     <div className="chat-header-name">
                       {currentRoom.name}
                     </div>
-                    <div className="chat-header-meta">
-                      <span>{t("members")}</span>
-                      <span className="count-pill">{roomMemberCount}</span>
-                      {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
-                    </div>
+                    {showRoomMemberMeta || typing ? (
+                      <div className="chat-header-meta">
+                        {showRoomMemberMeta ? (
+                          <>
+                            <span>{t("members")}</span>
+                            <span className="count-pill">{roomMemberCount}</span>
+                          </>
+                        ) : null}
+                        {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -1866,9 +1878,9 @@ export default function ChatPage() {
                             <div className={`message-inline-footer ${mine ? "mine" : ""}`}>
                               {msg.reactions?.length ? (
                                 <div className={`message-reactions-inline ${mine ? "mine" : ""}`}>
-                                  {safeMap(msg.reactions, (re, idx) => (
+                                  {safeMap(msg.reactions, (re) => (
                                     <button
-                                      key={idx}
+                                      key={re.emoji}
                                       type="button"
                                       className={`reaction-chip ${
                                         msg.current_user_reaction === re.emoji ? "active" : ""
@@ -1911,9 +1923,9 @@ export default function ChatPage() {
                             <div className={`message-inline-footer ${mine ? "mine" : ""}`}>
                               {msg.reactions?.length ? (
                                 <div className={`message-reactions-inline ${mine ? "mine" : ""}`}>
-                                  {safeMap(msg.reactions, (re, idx) => (
+                                  {safeMap(msg.reactions, (re) => (
                                     <button
-                                      key={idx}
+                                      key={re.emoji}
                                       type="button"
                                       className={`reaction-chip ${
                                         msg.current_user_reaction === re.emoji ? "active" : ""
@@ -1929,57 +1941,6 @@ export default function ChatPage() {
                             </div>
                           </div>
                         )}
-                        <div className={`message-foot ${mine ? "mine" : ""}`}>
-                        <span className="message-time-pill">
-                          {new Date(msg.created_at).toLocaleTimeString(
-                            [],
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            }
-                          )}
-                        </span>
-                        <div className="message-actions">
-                          <button
-                            className="icon-btn tiny"
-                            onClick={() => setReplyTo(msg)}
-                          >
-                            <Reply size={12} />
-                          </button>
-                          <button
-                            className="icon-btn tiny"
-                            onClick={() => doReaction(msg.id, "❤️")}
-                          >
-                            <Smile size={12} />
-                          </button>
-                          {mine && (
-                            <button
-                              className="icon-btn tiny danger"
-                              onClick={() =>
-                                doDeleteMessage(msg.id)
-                              }
-                            >
-                              <Trash2 size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      {msg.reactions?.length ? (
-                        <div className={`message-reactions-row ${mine ? "mine" : ""}`}>
-                          {safeMap(msg.reactions, (re, idx) => (
-                            <button
-                              key={idx}
-                              type="button"
-                              className="reaction-chip"
-                              onClick={() =>
-                                doReaction(msg.id, re.emoji)
-                              }
-                            >
-                              {re.emoji} {re.count}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 )

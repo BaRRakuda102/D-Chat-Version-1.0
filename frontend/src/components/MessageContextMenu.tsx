@@ -1,6 +1,12 @@
 import { Forward, Reply, Trash2 } from "lucide-react"
 
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "🔥"]
+const QUICK_REACTIONS = [
+  "\u{1F44D}",
+  "\u{2764}\u{FE0F}",
+  "\u{1F602}",
+  "\u{1F62E}",
+  "\u{1F525}",
+] as const
 
 interface MessageContextMenuProps {
   x: number
@@ -35,6 +41,7 @@ export default function MessageContextMenu({
             key={emoji}
             type="button"
             className="message-context-reaction"
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => onReact(emoji)}
           >
             {emoji}
