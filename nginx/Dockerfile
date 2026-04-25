@@ -11,4 +11,7 @@ RUN npm run build
 FROM nginx:1.27-alpine
 
 COPY nginx/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY nginx/25-render-config.sh /docker-entrypoint.d/25-render-config.sh
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+
+RUN chmod +x /docker-entrypoint.d/25-render-config.sh
