@@ -267,6 +267,7 @@ export default function ChatPage() {
   const [channelFeedback, setChannelFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null)
   const [roomEditFeedback, setRoomEditFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null)
   const [showMembers, setShowMembers] = useState(false)
+  const [showAddMemberMenu, setShowAddMemberMenu] = useState(false)
   const [showRoomMenu, setShowRoomMenu] = useState<number | null>(null)
   const [attachFile, setAttachFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null)
@@ -278,6 +279,7 @@ export default function ChatPage() {
   const typingTimeout = useRef<any>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const activeRoomRef = useRef(activeRoom)
+  const addMemberMenuRef = useRef<HTMLDivElement>(null)
 
   const currentRoom = rooms.find((r) => r.id === activeRoom)
   const isOwnProfile = !!profileUser && profileUser.id === user?.id
@@ -310,6 +312,12 @@ export default function ChatPage() {
   }, [activeRoom])
 
   useEffect(() => {
+    if (!showMembers) {
+      setShowAddMemberMenu(false)
+    }
+  }, [showMembers])
+
+  useEffect(() => {
     activeRoomRef.current = activeRoom
   }, [activeRoom])
 
@@ -331,6 +339,25 @@ export default function ChatPage() {
       window.removeEventListener("resize", closeMenu)
     }
   }, [messageMenu])
+
+  useEffect(() => {
+    if (!showAddMemberMenu) return
+
+    const handleClickOutside = (event: globalThis.MouseEvent) => {
+      if (
+        addMemberMenuRef.current &&
+        !addMemberMenuRef.current.contains(event.target as Node)
+      ) {
+        setShowAddMemberMenu(false)
+      }
+    }
+
+    window.addEventListener("mousedown", handleClickOutside)
+
+    return () => {
+      window.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [showAddMemberMenu])
 
   useEffect(() => {
     if (!user || activeRoom <= 0) return
@@ -1204,6 +1231,9 @@ export default function ChatPage() {
   const acceptedFriends = friends
     .filter((friend) => friend.status === "accepted" && friend.friend)
     .map((friend) => friend.friend!)
+  const addableFriends = acceptedFriends.filter(
+    (friend) => !members.some((member) => member.user_id === friend.id)
+  )
 
   const isOwner = currentRoom?.owner_id === user?.id
   const isRoomAdmin = currentMembership?.role === "admin"
@@ -1978,30 +2008,49 @@ export default function ChatPage() {
                   <div className="settings-label">
                     {t("addMember")}
                   </div>
-                  <select
-                    className="add-member-select"
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        doAddMember(Number(e.target.value))
-                        e.target.value = ""
-                      }
-                    }}
-                  >
-                    <option value="">{t("selectUser")}</option>
-                    {safeMap(
-                      acceptedFriends.filter(
-                        (u) =>
-                          !members.some(
-                            (m) => m.user_id === u.id
-                          )
-                      ),
-                      (u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.username}
-                        </option>
-                      )
+                  <div className="add-member-picker" ref={addMemberMenuRef}>
+                    <button
+                      type="button"
+                      className={`add-member-trigger ${showAddMemberMenu ? "open" : ""}`}
+                      disabled={addableFriends.length === 0}
+                      onClick={() => {
+                        if (addableFriends.length === 0) return
+                        setShowAddMemberMenu((prev) => !prev)
+                      }}
+                    >
+                      <span>
+                        {addableFriends.length === 0
+                          ? t("allFriendsAdded")
+                          : t("selectUser")}
+                      </span>
+                      <ChevronDown size={16} />
+                    </button>
+                    {showAddMemberMenu && addableFriends.length > 0 && (
+                      <div className="add-member-menu">
+                        {safeMap(addableFriends, (friend) => (
+                          <button
+                            key={friend.id}
+                            type="button"
+                            className="add-member-option"
+                            onClick={() => {
+                              setShowAddMemberMenu(false)
+                              void doAddMember(friend.id)
+                            }}
+                          >
+                            <SmallAvatar
+                              url={friend.avatar_url}
+                              name={friend.username}
+                              size={30}
+                            />
+                            <div className="add-member-option-copy">
+                              <strong>{friend.username}</strong>
+                              <span>{friend.is_online ? t("online") : t("offline")}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
                     )}
-                  </select>
+                  </div>
                 </div>
               )}
             </div>
