@@ -73,5 +73,15 @@ class ConnectionManager:
             if info["user_id"] == user_id and info["room_id"] == room_id:
                 self.disconnect(websocket)
 
+    def has_user_connections(self, user_id: int) -> bool:
+        return bool(self.user_connections.get(user_id))
+
+    def get_room_connections(self, room_id: int) -> list[tuple[WebSocket, int]]:
+        return [
+            (websocket, self.connection_info[websocket]["user_id"])
+            for websocket in self.active_connections.get(room_id, set())
+            if websocket in self.connection_info
+        ]
+
 
 manager = ConnectionManager()

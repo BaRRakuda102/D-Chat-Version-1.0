@@ -109,11 +109,20 @@ def serialize_message(message: ChatMessage, *, current_user_id: int | None = Non
         )
 
     current_user_reaction = None
+    delivery_status = None
     if current_user_id is not None:
         current_user_reaction = next(
             (reaction.emoji for reaction in message.reactions if reaction.user_id == current_user_id),
             None,
         )
+        if message.sender_id == current_user_id and message.room and message.room.members:
+            other_members = [member for member in message.room.members if member.user_id != current_user_id]
+            if other_members:
+                read_by_anyone = any(
+                    member.last_read_message_id is not None and member.last_read_message_id >= message.id
+                    for member in other_members
+                )
+                delivery_status = "read" if read_by_anyone else "delivered"
 
     return MessageResponse(
         id=message.id,
@@ -125,6 +134,7 @@ def serialize_message(message: ChatMessage, *, current_user_id: int | None = Non
         sender=serialize_user(message.sender) if message.sender else None,
         reactions=serialize_reactions(list(message.reactions)),
         current_user_reaction=current_user_reaction,
+        delivery_status=delivery_status,
         attachments=[
             MessageAttachmentResponse.model_validate(attachment)
             for attachment in message.attachments
@@ -152,6 +162,8 @@ async def serialize_room(
     unread_count = 0
     room_name = room.name
     room_avatar_url = room.avatar_url
+    room_is_online = None
+    room_last_seen = None
 
     if user_id is not None:
         membership_result = await session.execute(
@@ -182,6 +194,8 @@ async def serialize_room(
             if counterpart:
                 room_name = counterpart.display_name or counterpart.username
                 room_avatar_url = counterpart.avatar_url
+                room_is_online = counterpart.is_online
+                room_last_seen = counterpart.last_seen
 
     return RoomResponse(
         id=room.id,
@@ -193,6 +207,8 @@ async def serialize_room(
         member_count=member_count_result.scalar_one(),
         unread=unread_count,
         last_message=last_message.content if last_message else None,
+        is_online=room_is_online,
+        last_seen=room_last_seen,
         created_at=room.created_at,
         updated_at=room.updated_at,
     )
@@ -256,7 +272,7 @@ async def list_user_rooms(session: AsyncSession, *, user_id: int) -> list[ChatRo
     return list(result.scalars().unique().all())
 
 
-async def mark_room_read(session: AsyncSession, *, room_id: int, user_id: int) -> None:
+async def mark_room_read(session: AsyncSession, *, room_id: int, user_id: int) -> int | None:
     membership = await _ensure_room_member(session, room_id=room_id, user_id=user_id)
 
     last_message_result = await session.execute(
@@ -268,6 +284,7 @@ async def mark_room_read(session: AsyncSession, *, room_id: int, user_id: int) -
     last_message_id = last_message_result.scalar_one_or_none()
     membership.last_read_message_id = last_message_id
     await session.commit()
+    return last_message_id
 
 
 async def get_room_for_user(session: AsyncSession, *, room_id: int, user_id: int) -> ChatRoom:
@@ -455,6 +472,7 @@ async def list_room_messages(
             selectinload(ChatMessage.reply_to).selectinload(ChatMessage.sender),
             selectinload(ChatMessage.attachments),
             selectinload(ChatMessage.reactions),
+            selectinload(ChatMessage.room).selectinload(ChatRoom.members),
         )
         .where(and_(ChatMessage.room_id == room_id, ChatMessage.is_deleted.is_(False)))
         .order_by(ChatMessage.created_at.desc())

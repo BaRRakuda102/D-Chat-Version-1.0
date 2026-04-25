@@ -15,6 +15,7 @@ import {
   Trash2,
   Edit3,
   Check,
+  CheckCheck,
   X,
   Crown,
   UserX,
@@ -48,6 +49,8 @@ interface Room {
   member_count?: number
   unread?: number
   last_message?: string
+  is_online?: boolean
+  last_seen?: string
   created_at?: string
   updated_at?: string
 }
@@ -83,6 +86,7 @@ interface Message {
   sender?: { id: number; username: string; avatar_url?: string }
   reactions?: MessageReaction[]
   current_user_reaction?: string | null
+  delivery_status?: "delivered" | "read" | null
   reply_to?: Message | null
   attachments?: MessageAttachment[]
   is_deleted?: boolean
@@ -109,6 +113,7 @@ interface UserProfile {
   email?: string
   avatar_url?: string
   is_online?: boolean
+  last_seen?: string
   is_superuser?: boolean
   is_verified?: boolean
   date_of_birth?: string
@@ -218,6 +223,27 @@ const SmallAvatar = ({
   </div>
 )
 
+function hasOwnProperty<T extends object>(value: T, key: PropertyKey) {
+  return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function mergeMessageState(current: Message, incoming: Message): Message {
+  return {
+    ...current,
+    ...incoming,
+    sender: incoming.sender ?? current.sender,
+    reply_to: incoming.reply_to ?? current.reply_to,
+    attachments: incoming.attachments ?? current.attachments,
+    reactions: incoming.reactions ?? current.reactions,
+    current_user_reaction: hasOwnProperty(incoming, "current_user_reaction")
+      ? incoming.current_user_reaction ?? null
+      : current.current_user_reaction,
+    delivery_status: hasOwnProperty(incoming, "delivery_status")
+      ? incoming.delivery_status ?? null
+      : current.delivery_status,
+  }
+}
+
 export default function ChatPage() {
   const navigate = useNavigate()
   const { roomId } = useParams()
@@ -288,6 +314,58 @@ export default function ChatPage() {
   const currentMembership = members.find((member) => member.user_id === user?.id)
   const roomMemberCount = currentRoom?.member_count ?? members.length
   const showRoomMemberMeta = !!currentRoom && currentRoom.type !== "private"
+  const locale = language === "ru" ? "ru-RU" : "en-US"
+
+  const formatShortTime = (value?: string | null) => {
+    if (!value) return ""
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return ""
+    return parsed.toLocaleTimeString(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
+  const formatLastSeenLabel = (value?: string | null) => {
+    if (!value) return t("offline")
+
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return t("offline")
+
+    const now = new Date()
+    const diffMs = now.getTime() - parsed.getTime()
+    if (diffMs < 60_000) {
+      return `${t("lastSeen")} ${t("justNow")}`
+    }
+
+    const timePart = parsed.toLocaleTimeString(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    const isSameDay = parsed.toDateString() === now.toDateString()
+    if (isSameDay) {
+      return `${t("lastSeen")} ${timePart}`
+    }
+
+    const datePart = parsed.toLocaleDateString(locale, {
+      day: "2-digit",
+      month: "2-digit",
+    })
+    return `${t("lastSeen")} ${datePart}, ${timePart}`
+  }
+
+  const roomPresenceLabel =
+    currentRoom?.type === "private"
+      ? currentRoom.is_online
+        ? t("online")
+        : formatLastSeenLabel(currentRoom.last_seen)
+      : null
+
+  const formatDeliveryStatusLabel = (status?: Message["delivery_status"] | null) => {
+    if (status === "read") return t("read")
+    if (status === "delivered") return t("delivered")
+    return null
+  }
 
   useEffect(() => {
     if (roomId) {
@@ -399,11 +477,23 @@ export default function ChatPage() {
         clearTimeout(typingTimeout.current)
         typingTimeout.current = setTimeout(() => setTyping(false), 2000)
       } else if (data.type === "reaction_update") {
+        if (data.message) {
+          upsertMessage(data.message)
+        } else {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === data.message_id
+                ? { ...m, reactions: data.reactions || [] }
+                : m
+            )
+          )
+        }
+      } else if (data.type === "read_receipt" && data.last_read_message_id) {
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === data.message_id
-              ? { ...m, reactions: data.reactions || [] }
-              : m
+          prev.map((message) =>
+            message.sender_id === user?.id && message.id <= data.last_read_message_id
+              ? { ...message, delivery_status: "read" }
+              : message
           )
         )
       } else if (data.type === "room_cleared" && data.room_id === activeRoom) {
@@ -571,7 +661,9 @@ export default function ChatPage() {
   function upsertMessage(message: Message) {
     setMessages((prev) =>
       prev.some((item) => item.id === message.id)
-        ? prev.map((item) => (item.id === message.id ? message : item))
+        ? prev.map((item) =>
+            item.id === message.id ? mergeMessageState(item, message) : item
+          )
         : [...prev, message]
     )
   }
@@ -593,6 +685,8 @@ export default function ChatPage() {
         if (data.message && activeRoomRef.current !== data.room.id) {
           pushToast(data.message, "default")
         }
+      } else if (data.type === "profile_update" && data.user?.id) {
+        applyProfileUpdate(data.user)
       } else if (data.type === "room_membership_added" && data.room?.id) {
         upsertRoom(data.room)
         if (data.room?.type === "channel" && data.message) {
@@ -1332,6 +1426,17 @@ export default function ChatPage() {
       ? !!isOwner
       : currentMembership?.can_send_messages !== false
 
+  const renderTypingIndicator = () => (
+    <span className="typing-indicator">
+      <span>{t("typing")}</span>
+      <span className="typing-indicator-dots" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+    </span>
+  )
+
   return (
     <div className="chat-layout">
       {!mobileSidebar && (
@@ -1642,7 +1747,7 @@ export default function ChatPage() {
                     <div className="chat-header-name">
                       {currentRoom.name}
                     </div>
-                    {showRoomMemberMeta || typing ? (
+                    {showRoomMemberMeta || typing || roomPresenceLabel ? (
                       <div className="chat-header-meta">
                         {showRoomMemberMeta ? (
                           <>
@@ -1650,7 +1755,10 @@ export default function ChatPage() {
                             <span className="count-pill">{roomMemberCount}</span>
                           </>
                         ) : null}
-                        {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
+                        {!showRoomMemberMeta && !typing && roomPresenceLabel ? (
+                          <span>{roomPresenceLabel}</span>
+                        ) : null}
+                        {typing ? renderTypingIndicator() : null}
                       </div>
                     ) : null}
                   </div>
@@ -1668,7 +1776,7 @@ export default function ChatPage() {
                     <div className="chat-header-name">
                       {currentRoom.name}
                     </div>
-                    {showRoomMemberMeta || typing ? (
+                    {showRoomMemberMeta || typing || roomPresenceLabel ? (
                       <div className="chat-header-meta">
                         {showRoomMemberMeta ? (
                           <>
@@ -1676,7 +1784,10 @@ export default function ChatPage() {
                             <span className="count-pill">{roomMemberCount}</span>
                           </>
                         ) : null}
-                        {typing ? <span className="typing-indicator">{t("typing")}</span> : null}
+                        {!showRoomMemberMeta && !typing && roomPresenceLabel ? (
+                          <span>{roomPresenceLabel}</span>
+                        ) : null}
+                        {typing ? renderTypingIndicator() : null}
                       </div>
                     ) : null}
                   </div>
@@ -1776,13 +1887,10 @@ export default function ChatPage() {
                   const senderAvatar = senderProfile?.avatar_url || msg.sender?.avatar_url
                   const senderId = senderProfile?.id ?? msg.sender?.id ?? msg.sender_id
                   const isStandaloneMedia = hasOnlyImageAttachment
-                  const formattedTime = new Date(msg.created_at).toLocaleTimeString(
-                    [],
-                    {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    }
-                  )
+                  const formattedTime = formatShortTime(msg.created_at)
+                  const deliveryStatusLabel = mine
+                    ? formatDeliveryStatusLabel(msg.delivery_status)
+                    : null
                   const attachmentElements = safeMap(
                     attachments,
                     (attachment, attachmentIndex) => (
@@ -1892,7 +2000,19 @@ export default function ChatPage() {
                                   ))}
                                 </div>
                               ) : null}
-                              <span className="message-time-inline">{formattedTime}</span>
+                              <div className={`message-inline-meta ${mine ? "mine" : ""}`}>
+                                <span className="message-time-inline">{formattedTime}</span>
+                                {deliveryStatusLabel ? (
+                                  <span className="message-status-inline">
+                                    {msg.delivery_status === "read" ? (
+                                      <CheckCheck size={12} />
+                                    ) : (
+                                      <Check size={12} />
+                                    )}
+                                    <span>{deliveryStatusLabel}</span>
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                         ) : (
@@ -1937,7 +2057,19 @@ export default function ChatPage() {
                                   ))}
                                 </div>
                               ) : null}
-                              <span className="message-time-inline">{formattedTime}</span>
+                              <div className={`message-inline-meta ${mine ? "mine" : ""}`}>
+                                <span className="message-time-inline">{formattedTime}</span>
+                                {deliveryStatusLabel ? (
+                                  <span className="message-status-inline">
+                                    {msg.delivery_status === "read" ? (
+                                      <CheckCheck size={12} />
+                                    ) : (
+                                      <Check size={12} />
+                                    )}
+                                    <span>{deliveryStatusLabel}</span>
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                         )}

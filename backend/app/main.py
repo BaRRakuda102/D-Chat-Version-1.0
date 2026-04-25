@@ -189,6 +189,7 @@ async def websocket_chat(websocket: WebSocket, room_id: int) -> None:
             await websocket.close(code=1008)
             return
         await user_service.set_user_presence(session, user, is_online=True)
+        await realtime_service.broadcast_user_presence(session, user_id=user_id)
 
     await manager.connect(websocket, room_id=room_id, user_id=user_id)
     try:
@@ -259,8 +260,9 @@ async def websocket_chat(websocket: WebSocket, room_id: int) -> None:
     finally:
         async with async_session() as session:
             user = await session.get(User, user_id)
-            if user:
+            if user and not manager.has_user_connections(user_id):
                 await user_service.set_user_presence(session, user, is_online=False)
+                await realtime_service.broadcast_user_presence(session, user_id=user_id)
 
 
 @app.websocket("/ws/notifications")
@@ -286,6 +288,8 @@ async def websocket_notifications(websocket: WebSocket) -> None:
         if not user:
             await websocket.close(code=1008)
             return
+        await user_service.set_user_presence(session, user, is_online=True)
+        await realtime_service.broadcast_user_presence(session, user_id=user_id)
 
     await manager.connect_user(websocket, user_id=user_id)
     try:
@@ -296,6 +300,12 @@ async def websocket_notifications(websocket: WebSocket) -> None:
     except Exception:
         logger.exception("Notification websocket error for user %s", user_id)
         manager.disconnect(websocket)
+    finally:
+        async with async_session() as session:
+            user = await session.get(User, user_id)
+            if user and not manager.has_user_connections(user_id):
+                await user_service.set_user_presence(session, user, is_online=False)
+                await realtime_service.broadcast_user_presence(session, user_id=user_id)
 
 
 def _frontend_file_response(relative_path: str | None = None) -> FileResponse:

@@ -361,6 +361,16 @@ async def list_messages(
         limit=min(limit, 200),
         offset=offset,
     )
+    membership_result = await session.execute(
+        select(ChatMember.last_read_message_id).where(
+            and_(ChatMember.room_id == room_id, ChatMember.user_id == current_user.id)
+        )
+    )
+    await realtime_service.broadcast_read_receipt(
+        room_id=room_id,
+        user_id=current_user.id,
+        last_read_message_id=membership_result.scalar_one_or_none(),
+    )
     await realtime_service.broadcast_room_snapshot_to_user(
         session,
         room_id=room_id,
@@ -415,7 +425,16 @@ async def mark_room_read(
     current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> SimpleMessageResponse:
-    await chat_service.mark_room_read(session, room_id=room_id, user_id=current_user.id)
+    last_read_message_id = await chat_service.mark_room_read(
+        session,
+        room_id=room_id,
+        user_id=current_user.id,
+    )
+    await realtime_service.broadcast_read_receipt(
+        room_id=room_id,
+        user_id=current_user.id,
+        last_read_message_id=last_read_message_id,
+    )
     await realtime_service.broadcast_room_snapshot_to_user(
         session,
         room_id=room_id,

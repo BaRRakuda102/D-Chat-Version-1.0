@@ -45,6 +45,8 @@ class RoomResponse(BaseModel):
     member_count: int = 0
     unread: int = 0
     last_message: str | None = None
+    is_online: bool | None = None
+    last_seen: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -157,6 +159,7 @@ class MessageResponse(BaseModel):
     sender: UserResponse | None = None
     reactions: list[MessageReactionSummary] = Field(default_factory=list)
     current_user_reaction: str | None = None
+    delivery_status: str | None = None
     attachments: list[MessageAttachmentResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

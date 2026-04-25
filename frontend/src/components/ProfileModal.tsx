@@ -8,6 +8,7 @@ interface ProfileUser {
   email?: string
   avatar_url?: string
   is_online?: boolean
+  last_seen?: string
   is_superuser?: boolean
   is_verified?: boolean
   date_of_birth?: string
@@ -20,6 +21,7 @@ interface ProfileRequestUser {
   username: string
   avatar_url?: string
   is_online?: boolean
+  last_seen?: string
 }
 
 interface ProfileFriendRequest {
@@ -109,6 +111,36 @@ function formatMemberSince(value?: string) {
   }
 }
 
+function formatPresenceText(user: ProfileUser, t: (key: string) => string) {
+  if (user.is_online) return t("online")
+  if (!user.last_seen) return t("offline")
+
+  const parsed = new Date(user.last_seen)
+  if (Number.isNaN(parsed.getTime())) return t("offline")
+
+  const now = new Date()
+  const diffMs = now.getTime() - parsed.getTime()
+  if (diffMs < 60_000) {
+    return `${t("lastSeen")} ${t("justNow")}`
+  }
+
+  const locale = /[А-Яа-яЁё]/.test(t("online")) ? "ru-RU" : "en-US"
+  const timePart = parsed.toLocaleTimeString(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+
+  if (parsed.toDateString() === now.toDateString()) {
+    return `${t("lastSeen")} ${timePart}`
+  }
+
+  const datePart = parsed.toLocaleDateString(locale, {
+    day: "2-digit",
+    month: "2-digit",
+  })
+  return `${t("lastSeen")} ${datePart}, ${timePart}`
+}
+
 export default function ProfileModal({
   user,
   isCurrentUser,
@@ -138,6 +170,7 @@ export default function ProfileModal({
     () => formatMemberSince(user.created_at),
     [user.created_at]
   )
+  const presenceText = useMemo(() => formatPresenceText(user, t), [t, user])
 
   const shownAge = useMemo(() => {
     if (!form.date_of_birth) return user.age ?? null
@@ -221,6 +254,9 @@ export default function ProfileModal({
                   </span>
                 )}
               </div>
+              {!user.is_online ? (
+                <p className="profile-presence-note">{presenceText}</p>
+              ) : null}
             </div>
           </div>
 
