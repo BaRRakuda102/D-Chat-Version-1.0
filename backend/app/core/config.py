@@ -24,6 +24,26 @@ def _env_or_default(name: str, default: str) -> str:
     return stripped or default
 
 
+def _database_url_from_environment() -> str:
+    direct_value = os.getenv("DATABASE_URL", "").strip()
+    if direct_value:
+        return direct_value
+
+    alternate_value = os.getenv("APP_DATABASE_URL", "").strip()
+    if alternate_value:
+        return alternate_value
+
+    pg_host = os.getenv("PGHOST", "").strip()
+    pg_port = os.getenv("PGPORT", "").strip() or "5432"
+    pg_user = os.getenv("PGUSER", "").strip()
+    pg_password = os.getenv("PGPASSWORD", "").strip()
+    pg_database = os.getenv("PGDATABASE", "").strip()
+    if pg_host and pg_user and pg_password and pg_database:
+        return f"postgresql+asyncpg://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
+
+    return "postgresql+asyncpg://dchat:dchat@localhost:5432/dchat"
+
+
 class _CsvListSettingsMixin:
     def prepare_field_value(
         self,
@@ -63,10 +83,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     DATABASE_URL: str = Field(
-        default_factory=lambda: _env_or_default(
-            "DATABASE_URL",
-            "postgresql+asyncpg://dchat:dchat@localhost:5432/dchat",
-        )
+        default_factory=_database_url_from_environment
     )
     REDIS_URL: str = Field(default_factory=lambda: _env_or_default("REDIS_URL", "redis://localhost:6379/0"))
 

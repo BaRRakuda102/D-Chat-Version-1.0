@@ -3,6 +3,16 @@
 set -eu
 
 normalize_database_url() {
+  if [ -z "${DATABASE_URL:-}" ] && [ -n "${APP_DATABASE_URL:-}" ]; then
+    DATABASE_URL="${APP_DATABASE_URL}"
+    export DATABASE_URL
+  fi
+
+  if [ -z "${DATABASE_URL:-}" ] && [ -n "${PGHOST:-}" ] && [ -n "${PGUSER:-}" ] && [ -n "${PGPASSWORD:-}" ] && [ -n "${PGDATABASE:-}" ]; then
+    DATABASE_URL="postgresql+asyncpg://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT:-5432}/${PGDATABASE}"
+    export DATABASE_URL
+  fi
+
   case "${DATABASE_URL:-}" in
     postgresql+asyncpg://*)
       ;;
