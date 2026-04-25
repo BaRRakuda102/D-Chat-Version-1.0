@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from time import perf_counter
@@ -8,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSoc
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -67,6 +68,8 @@ app.add_middleware(
 upload_dir = Path(settings.UPLOAD_DIR)
 upload_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
+
+frontend_dist_dir = Path(os.getenv("FRONTEND_DIST_DIR", "/app/frontend-dist"))
 
 app.include_router(auth.router, prefix=f"{settings.API_V1_PREFIX}/auth", tags=["auth"])
 app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=["users"])
@@ -293,3 +296,36 @@ async def websocket_notifications(websocket: WebSocket) -> None:
     except Exception:
         logger.exception("Notification websocket error for user %s", user_id)
         manager.disconnect(websocket)
+
+
+def _frontend_file_response(relative_path: str | None = None) -> FileResponse:
+    if not frontend_dist_dir.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Frontend assets not found")
+
+    if relative_path:
+        candidate = (frontend_dist_dir / relative_path).resolve()
+        try:
+            candidate.relative_to(frontend_dist_dir.resolve())
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
+        if candidate.is_file():
+            return FileResponse(candidate)
+
+    index_path = frontend_dist_dir / "index.html"
+    if not index_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Frontend index not found")
+    return FileResponse(index_path)
+
+
+@app.get("/", include_in_schema=False)
+async def frontend_index() -> FileResponse:
+    return _frontend_file_response()
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def frontend_spa(full_path: str) -> FileResponse:
+    reserved_prefixes = ("api/", "uploads/", "ws/")
+    reserved_exact_paths = {"api", "uploads", "ws"}
+    if full_path in reserved_exact_paths or full_path.startswith(reserved_prefixes):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return _frontend_file_response(full_path or None)

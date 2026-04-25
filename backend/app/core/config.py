@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import (
@@ -190,12 +191,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _augment_render_defaults(self) -> "Settings":
-        render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
-        if render_hostname and render_hostname not in self.ALLOWED_HOSTS:
-            self.ALLOWED_HOSTS.append(render_hostname)
+        host_candidates = [
+            os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip(),
+            os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip(),
+            os.getenv("RAILWAY_PRIVATE_DOMAIN", "").strip(),
+        ]
+        for candidate in host_candidates:
+            if candidate and candidate not in self.ALLOWED_HOSTS:
+                self.ALLOWED_HOSTS.append(candidate)
 
-        if self.FRONTEND_URL and self.FRONTEND_URL not in self.ALLOWED_ORIGINS:
-            self.ALLOWED_ORIGINS.append(self.FRONTEND_URL)
+        if self.FRONTEND_URL:
+            if self.FRONTEND_URL not in self.ALLOWED_ORIGINS:
+                self.ALLOWED_ORIGINS.append(self.FRONTEND_URL)
+            parsed_frontend_url = urlsplit(self.FRONTEND_URL)
+            frontend_host = parsed_frontend_url.hostname or ""
+            if frontend_host and frontend_host not in self.ALLOWED_HOSTS:
+                self.ALLOWED_HOSTS.append(frontend_host)
 
         return self
 

@@ -48,6 +48,7 @@ def summarize(name: str) -> str:
 
 
 print(summarize("DATABASE_URL"))
+print(summarize("APP_DATABASE_URL"))
 print(summarize("REDIS_URL"))
 PY
 }
