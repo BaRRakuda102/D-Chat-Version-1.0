@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     DotEnvSettingsSource,
@@ -187,6 +187,17 @@ class Settings(BaseSettings):
         if value and smtp_tls:
             raise ValueError("SMTP_SSL and SMTP_TLS cannot both be enabled at the same time")
         return value
+
+    @model_validator(mode="after")
+    def _augment_render_defaults(self) -> "Settings":
+        render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+        if render_hostname and render_hostname not in self.ALLOWED_HOSTS:
+            self.ALLOWED_HOSTS.append(render_hostname)
+
+        if self.FRONTEND_URL and self.FRONTEND_URL not in self.ALLOWED_ORIGINS:
+            self.ALLOWED_ORIGINS.append(self.FRONTEND_URL)
+
+        return self
 
     @property
     def access_cookie_max_age(self) -> int:

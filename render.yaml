@@ -1,0 +1,83 @@
+services:
+  - type: web
+    name: dchat-frontend
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./nginx/Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: BACKEND_UPSTREAM
+        fromService:
+          name: dchat-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CLIENT_MAX_BODY_SIZE
+        value: 50M
+
+  - type: web
+    name: dchat-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_NAME
+        value: D-Chat API
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dchat-postgres
+          property: connectionString
+      - key: APP_DATABASE_URL
+        fromDatabase:
+          name: dchat-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: dchat-cache
+          type: keyvalue
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        fromService:
+          name: dchat-frontend
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: ALLOWED_ORIGINS
+        fromService:
+          name: dchat-frontend
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: ALLOWED_HOSTS
+        value: localhost,127.0.0.1
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_SAMESITE
+        value: lax
+      - key: UPLOAD_DIR
+        value: /app/uploads
+      - key: MAX_UPLOAD_SIZE
+        value: "52428800"
+
+  - type: keyvalue
+    name: dchat-cache
+    plan: free
+    region: frankfurt
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
+databases:
+  - name: dchat-postgres
+    plan: free
+    region: frankfurt
+    databaseName: dchat
+    postgresMajorVersion: "17"
+    ipAllowList: []
