@@ -348,13 +348,7 @@ export default function ChatPage() {
     socket.onmessage = (ev) => {
       const data = JSON.parse(ev.data)
       if (data.type === "message") {
-        setMessages((prev) =>
-          prev.some((message) => message.id === data.message?.id)
-            ? prev.map((message) =>
-                message.id === data.message?.id ? data.message : message
-              )
-            : [...prev, data.message]
-        )
+        upsertMessage(data.message)
         setRooms((prev) =>
           prev.map((room) =>
             room.id === activeRoom
@@ -498,6 +492,14 @@ export default function ChatPage() {
         : [...prev, room]
       return sortRooms(next)
     })
+  }
+
+  function upsertMessage(message: Message) {
+    setMessages((prev) =>
+      prev.some((item) => item.id === message.id)
+        ? prev.map((item) => (item.id === message.id ? message : item))
+        : [...prev, message]
+    )
   }
 
   function removeRoom(roomId: number) {
@@ -668,7 +670,7 @@ export default function ChatPage() {
       })
 
       if (targetRoomId === activeRoom) {
-        setMessages((prev) => [...prev, created])
+        upsertMessage(created)
       }
 
       setRooms((prev) =>
@@ -713,7 +715,7 @@ export default function ChatPage() {
             attachments: [uploaded],
           }),
         })
-        setMessages((prev) => [...prev, created])
+        upsertMessage(created)
         setRooms((prev) =>
           prev.map((room) =>
             room.id === activeRoom
