@@ -288,6 +288,33 @@ async def delete_room(session: AsyncSession, *, room: ChatRoom) -> None:
     await session.commit()
 
 
+async def list_room_member_ids(session: AsyncSession, *, room_id: int) -> list[int]:
+    result = await session.execute(
+        select(ChatMember.user_id).where(ChatMember.room_id == room_id)
+    )
+    return list(result.scalars().all())
+
+
+async def clear_room_messages(session: AsyncSession, *, room_id: int) -> None:
+    memberships_result = await session.execute(
+        select(ChatMember).where(ChatMember.room_id == room_id)
+    )
+    for membership in memberships_result.scalars().all():
+        membership.last_read_message_id = None
+
+    messages_result = await session.execute(
+        select(ChatMessage).where(ChatMessage.room_id == room_id)
+    )
+    for message in messages_result.scalars().all():
+        await session.delete(message)
+
+    room = await session.get(ChatRoom, room_id)
+    if room:
+        room.updated_at = utcnow()
+
+    await session.commit()
+
+
 async def list_room_members(session: AsyncSession, *, room_id: int, user_id: int) -> list[ChatMember]:
     await _ensure_room_member(session, room_id=room_id, user_id=user_id)
     result = await session.execute(

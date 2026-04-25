@@ -402,6 +402,8 @@ export default function ChatPage() {
               : m
           )
         )
+      } else if (data.type === "room_cleared" && data.room_id === activeRoom) {
+        setMessages([])
       } else if (data.type === "profile_update" && data.user?.id) {
         applyProfileUpdate(data.user)
       }
@@ -872,6 +874,37 @@ export default function ChatPage() {
         body: JSON.stringify({ user_id: uid }),
       })
       loadMembers(activeRoom)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const doClearPrivateRoom = async () => {
+    if (!activeRoom) return
+    try {
+      await apiVoid(`/api/v1/chat/rooms/${activeRoom}/clear`, {
+        method: "POST",
+      })
+      setMessages([])
+      setShowRoomMenu(null)
+      loadRooms()
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const doDeleteCurrentRoom = async () => {
+    if (!currentRoom) return
+    try {
+      await apiVoid(`/api/v1/chat/rooms/${currentRoom.id}`, {
+        method: "DELETE",
+      })
+      removeRoom(currentRoom.id)
+      setMessages([])
+      setMembers([])
+      setActiveRoom(0)
+      navigate("/chat/0")
+      setShowRoomMenu(null)
     } catch (e) {
       console.error(e)
     }
@@ -1591,23 +1624,20 @@ export default function ChatPage() {
                       <UserPlus size={14} /> {t("addMember")}
                     </button>
                   )}
-                  {isOwner && (
+                  {currentRoom.type === "private" && (
+                    <button
+                      onClick={() => {
+                        void doClearPrivateRoom()
+                      }}
+                    >
+                      <Trash2 size={14} /> {t("clearChat")}
+                    </button>
+                  )}
+                  {(currentRoom.type === "private" || isOwner) && (
                     <button
                       className="danger"
-                      onClick={async () => {
-                        try {
-                          await apiVoid(
-                            `/api/v1/chat/rooms/${currentRoom.id}`,
-                            {
-                              method: "DELETE",
-                            }
-                          )
-                          loadRooms()
-                          navigate("/chat/0")
-                          setShowRoomMenu(null)
-                        } catch (e) {
-                          console.error(e)
-                        }
+                      onClick={() => {
+                        void doDeleteCurrentRoom()
                       }}
                     >
                       <Trash2 size={14} /> {t("deleteRoom")}

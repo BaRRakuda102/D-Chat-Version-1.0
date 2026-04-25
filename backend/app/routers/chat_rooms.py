@@ -133,7 +133,8 @@ async def delete_room(
     session: AsyncSession = Depends(get_db),
 ) -> SimpleMessageResponse:
     room = await chat_service.get_room_for_user(session, room_id=room_id, user_id=current_user.id)
-    if room.owner_id != current_user.id and not current_user.is_superuser:
+    member_ids = await chat_service.list_room_member_ids(session, room_id=room_id)
+    if room.type != RoomType.PRIVATE and room.owner_id != current_user.id and not current_user.is_superuser:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only room owner can delete the room")
     await chat_service.delete_room(session, room=room)
     await audit_service.create_audit_log(
@@ -145,7 +146,49 @@ async def delete_room(
         ip_address=resolve_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
+    for member_id in member_ids:
+        manager.disconnect_user_from_room(user_id=member_id, room_id=room_id)
+        await manager.broadcast_to_user(
+            member_id,
+            {
+                "type": "room_membership_removed",
+                "room_id": room_id,
+                "message": "Чат удален",
+            },
+        )
     return SimpleMessageResponse(message="Room deleted.")
+
+
+@router.post("/{room_id}/clear", response_model=SimpleMessageResponse)
+async def clear_room(
+    room_id: int,
+    request: Request,
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> SimpleMessageResponse:
+    room = await chat_service.get_room_for_user(session, room_id=room_id, user_id=current_user.id)
+    if room.type != RoomType.PRIVATE:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only private chats can be cleared")
+
+    await chat_service.clear_room_messages(session, room_id=room_id)
+    await audit_service.create_audit_log(
+        session,
+        action="clear_room",
+        user_id=current_user.id,
+        entity_type="room",
+        entity_id=room_id,
+        ip_address=resolve_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    await manager.broadcast(
+        room_id,
+        {
+            "type": "room_cleared",
+            "room_id": room_id,
+        },
+    )
+    await realtime_service.broadcast_room_snapshot(session, room_id=room_id)
+    return SimpleMessageResponse(message="Room cleared.")
 
 
 @router.get("/{room_id}/members", response_model=list[MemberResponse])
